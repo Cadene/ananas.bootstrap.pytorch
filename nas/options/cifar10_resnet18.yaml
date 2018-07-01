@@ -1,0 +1,14 @@
+__include__: cifar10.yaml
+dataset:
+  batch_size: 128
+model:
+  name: simple
+  network:
+    import: nas.models.networks.factory
+    name: ResNet18
+optimizer:
+  import:
+  name: sgd
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0005

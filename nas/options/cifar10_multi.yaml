@@ -1,0 +1,25 @@
+__include__: cifar10.yaml
+model:
+  name: simple
+  network:
+    import: nas.models.networks.factory
+    name: PNASNet
+    n_heads: 2
+  criterion:
+    import: nas.models.criterions.factory
+    name: multi_cross_entropy
+  metric:
+    import: nas.models.metrics.factory
+    name: multi_accuracy
+    topk: [1]
+engine:
+  saving_criteria:
+    - accuracy_top1_head,1:gt # save when new_best > best
+view:
+  - logs:train_epoch.loss+logs:eval_epoch.loss
+  - logs:train_batch.loss
+  - logs:train_epoch.loss_head,0+logs:eval_epoch.loss_head,0
+  - logs:train_epoch.loss_head,1+logs:eval_epoch.loss_head,1
+  - logs:train_epoch.accuracy_top1_head,0+logs:eval_epoch.accuracy_top1_head,0
+  - logs:train_epoch.accuracy_top1_head,1+logs:eval_epoch.accuracy_top1_head,1
+  - logs:train_epoch.lr

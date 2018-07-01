@@ -1,0 +1,44 @@
+exp:
+  dir: /mnt/apcv_data/rcadene/log_nas/cifar10/default
+  resume: # last, best_[...], or empty (from scratch)
+dataset:
+  import: nas.datasets.factory
+  name: cifar10
+  dir: /mnt/apcv_data/rcadene/data/cifar10
+  train_split: train
+  eval_split: val
+  nb_threads: 4
+  batch_size: 256
+model:
+  name: simple
+  network:
+    import: nas.models.networks.factory
+    name: PNASNet
+    F: 44
+    n_heads: 1
+  criterion:
+    name: cross_entropy
+  metric:
+    name: accuracy
+    topk: [1]
+optimizer:
+  import: nas.optimizers.factory
+  name: cifar10
+  lr: 0.025
+  momentum: 0.
+  weight_decay: 0.
+engine:
+  name: default
+  debug: False
+  nb_epochs: 300
+  print_freq: 10
+  saving_criteria:
+    - accuracy_top1:gt # save when new_best > best
+misc:
+  cuda: True
+  seed: 1337
+view:
+  - logs:train_epoch.loss+logs:eval_epoch.loss
+  - logs:train_batch.loss
+  - logs:train_epoch.accuracy_top1+logs:eval_epoch.accuracy_top1
+  - logs:train_epoch.lr
