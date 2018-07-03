@@ -1,0 +1,40 @@
+pbt:
+  #path_opts: logs/cifar10/lolilol/options.yaml 
+  path_opts: nas/options/cifar10.yaml
+  mutation_rate: 1
+  n_workers: 1
+  n_pop_max: 5
+  cmd: 
+    #train: ../autopilotcv-pytorch/slurm.py 1080ti 1 python -m bootstrap.run
+    train: -m bootstrap.run
+    clone: cp -r
+    #evolve: ../autopilotcv-pytorch/slurm.py 1080ti 1 python -m nas.evolve
+    evolve: -m nas.evolve
+  resume: best_accuracy_top1
+  weight_no_mutation: 1.
+  mutations:
+    optimizer:
+      lr:
+        weight: 1.
+        type: opt
+        init: [0.025, 0.015]
+        perturb: [5.0, 0.2]
+        perturb_type: 'linear' # logscale | linear
+    # model:
+    #   network:
+    #     add_blocks:
+    #       weight: 1.
+    #       type: method
+    #       #args: 0
+    #     remove_blocks:
+    #       weight: 1.
+    #       type: method
+    #       #args: 0
+    #     reset:
+    #       weight: 1.
+    #       type: method
+exp:
+  dir: logs/cifar10_pbt/debug
+  resume:
+misc:
+  seed: 1337
