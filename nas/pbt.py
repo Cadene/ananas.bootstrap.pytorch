@@ -24,6 +24,8 @@ from bootstrap.lib.options import Options
 # Dev: Create the same views than the one from the papers
 # Dev: Add signal to revive a thread?
 # Test: sgd pbt better than sgd hand tune
+# Test: adam pbt better than adam hand tune
+# Test: adamW pbt better than adamW hand tune
 # Test: mutation arch converge
 # Test: mutation arch pretraining converge
 
@@ -175,7 +177,7 @@ class Mutant():
         Logger()('cloning {}'.format(self.path_opts))
         exp_dir = os.path.join(
                 os.path.dirname(self.exp_dir.strip()),
-                '{:%Y-%m-%d-%H-%M-%S}'.format(datetime.now()))
+                '{:%Y-%m-%d-%H-%M-%S-%f}'.format(datetime.now()))
         path_opts = os.path.join(exp_dir, 'options.yaml')
         cmd = '{} {} {}'.format(
             Options()['pbt']['cmd']['clone'],
@@ -205,7 +207,7 @@ class Mutant():
             Logger()('evolving job {} is {} in {}'.format(job_id, status, self.exp_dir))
             if slurm_is_idle(job_id):
                 break
-            time.sleep(1)
+            time.sleep(10)
         self.status = 'evolved'
 
 
@@ -226,7 +228,7 @@ class Population():
         for i in range(Options()['pbt']['n_workers']):
             exp_mutant_dir = os.path.join(
                 self.exp_dir,
-                '{:%Y-%m-%d-%H-%M-%S}'.format(datetime.now()))
+                '{:%Y-%m-%d-%H-%M-%S-%f}'.format(datetime.now()))
             new_mutant = Mutant(path_mutant_opts, exp_mutant_dir)
             self.add_mutant_to_train(new_mutant)
             time.sleep(1)
@@ -234,7 +236,7 @@ class Population():
     def add_mutant_to_train(self, mutant):
         if len(self.evaluated_mutants()) > self.n_pop_max:
             return
-        self.pop[mutant.path_opts] = mutant
+        self.pop[mutant.exp_dir] = mutant
         self.queue.put(mutant)
 
     def get_mutant_to_train(self):
@@ -284,14 +286,14 @@ class Population():
 
 
     def best_mutant(self):
-        pop = {k:m for k, m in self.pop.items() if m.score is not None}
+        #pop = {k:m for k, m in self.pop.items() if m.score is not None}
         ms = [m for m in self.pop.values() if m.score is not None]
         ranked = sorted(ms, key=lambda x:x.score, reverse=True) # TODO reverse=False
         # TODO not the best but random.choices 20% best
         return ranked[0]
 
     def evaluated_mutants(self):
-        km = {k:v for k,v in self.pop.items() if v.score is not None}
+        km = {k:m for k,m in self.pop.items() if m.score is not None}
         return km
 
     def __len__(self):
