@@ -24,13 +24,14 @@ model:
 optimizer:
   import: nas.optimizers.factory
   name: cifar10
-  lr: 0.025
+  lr: 0.02
   momentum: 0.
   weight_decay: 0.
+  cosine_annealing: False
 engine:
   name: default
   debug: False
-  nb_epochs: 1
+  nb_epochs: 2
   #nb_epochs: 20
   print_freq: 10
   saving_criteria:

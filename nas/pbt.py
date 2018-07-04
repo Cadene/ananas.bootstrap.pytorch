@@ -1,4 +1,5 @@
 import os
+import json
 import click
 import traceback
 import collections
@@ -6,6 +7,7 @@ import queue
 import threading
 import torch
 import argparse
+import time
 from datetime import datetime
 from bootstrap.run import init_experiment_directory
 from bootstrap.lib import utils
@@ -16,10 +18,11 @@ from bootstrap.lib.options import Options
 # Dev: Populate strategy
 # Dev: History of mutation
 # Dev: Save state / Resume state
-# Dev: Mutation arch with pretraining
+# Dev: Mutation of an arch while using pretraining (how to handle optimizer state?)
 # Dev: Multiple metrics (min and max)
-# Dev: Ranking strategies
-# Dev: create views from papers
+# Dev: Add ranking strategies for comparing mutants
+# Dev: Create the same views than the one from the papers
+# Dev: Add signal to revive a thread?
 # Test: sgd pbt better than sgd hand tune
 # Test: mutation arch converge
 # Test: mutation arch pretraining converge
@@ -107,20 +110,36 @@ class Mutant():
 
     def train(self):
         self.status = 'training'
-        opts = Options.load_yaml_opts(self.path_opts)
         Logger()('training {}'.format(self.path_opts))
 
         if self.generation == 0:
-            ckpt_name = ''
+            opts = Options.load_yaml_opts(self.path_opts)
+            nb_epochs = opts['engine']['nb_epochs']
+            # we can start training from scratch or from checkpoint
+            ckpt_name = '' if opts['exp']['resume'] is None else opts['exp']['resume']
         else:
-            ckpt_name, _ = find_ckpt(self.exp_dir, Options()['pbt']['resume'])
-        
-        cmd = '{} -o {} --exp.dir {} --exp.resume {}  --engine.nb_epochs {}'.format(
+            # load parent options
+            opts = Options.load_yaml_opts(self.parent)
+            nb_epochs = opts['engine']['nb_epochs'] + Options()['pbt']['mutation_rate']
+            ckpt_name, path_ckpt = find_ckpt(self.exp_dir, Options()['pbt']['resume'])
+            # if we start training from best epoch and not last epoch,
+            # we must remove some extra data in logs.json
+            if Options()['pbt']['resume'] != 'last':
+                ckpt = torch.load(path_ckpt)
+                path_logs = os.path.join(self.exp_dir, 'logs.json')
+                logs = json.load(open(path_logs))
+                for k,v in logs.items():
+                    if 'train_epoch' in k or 'eval_epoch' in k:
+                        logs[k] = logs[k][:ckpt['epoch']+1]
+                with open(path_logs, 'w') as f:
+                    json.dump(logs, f)
+
+        cmd = '{} -o {} --exp.dir {} --exp.resume {} --engine.nb_epochs {}'.format(
             Options()['pbt']['cmd']['train'],
             self.path_opts, 
             self.exp_dir,
             ckpt_name,
-            opts['engine']['nb_epochs'] + Options()['pbt']['mutation_rate'])
+            nb_epochs)
         Logger()(cmd)
 
         job_id = slurm_submit(cmd)
@@ -129,7 +148,7 @@ class Mutant():
             Logger()('training job {} is {} in {}'.format(job_id, status, self.exp_dir))
             if slurm_is_idle(job_id):
                 break
-            os.system('sleep 10')
+            time.sleep(10)
         self.status = 'trained'
 
     def eval(self):
@@ -149,7 +168,7 @@ class Mutant():
         #     self.path_opts, 
         #     self.exp_dir,
         #     Options()['pbt']['resume']))
-        # os.system('sleep 2')
+        # time.sleep(2)
         # self.status = 'tested'
 
     def clone(self):
@@ -164,7 +183,7 @@ class Mutant():
             exp_dir)
         Logger()(cmd)
         os.system(cmd)
-        os.system('sleep 10')
+        time.sleep(1)
         m = Mutant(path_opts, exp_dir,
             generation=self.generation+1,
             status='cloned',
@@ -186,7 +205,7 @@ class Mutant():
             Logger()('evolving job {} is {} in {}'.format(job_id, status, self.exp_dir))
             if slurm_is_idle(job_id):
                 break
-            os.system('sleep 10')
+            time.sleep(1)
         self.status = 'evolved'
 
 
@@ -198,6 +217,8 @@ class Population():
         self.exp_dir = Options()['exp']['dir']
         self.path_ckpt = os.path.join(self.exp_dir, 'ckpt_population_last.pth.tar')
         self.n_pop_max = Options()['pbt']['n_pop_max']
+        self.n_workers = Options()['pbt']['n_workers']
+        self.workers = []
 
     def populate(self):
         # TODO: improve populate
@@ -208,7 +229,7 @@ class Population():
                 '{:%Y-%m-%d-%H-%M-%S}'.format(datetime.now()))
             new_mutant = Mutant(path_mutant_opts, exp_mutant_dir)
             self.add_mutant_to_train(new_mutant)
-            os.system('sleep 1')
+            time.sleep(1)
 
     def add_mutant_to_train(self, mutant):
         if len(self.evaluated_mutants()) > self.n_pop_max:
@@ -228,7 +249,7 @@ class Population():
             if m.status != 'killed':
                 self.add_mutant_to_train(m)
                 n_mutants += 1
-                os.system('sleep 1')
+                time.sleep(1)
         # TODO: multithread this
         # for i in range(n_mutants, Options['pbt']['n_workers']):
         #     best_mutant = self.best_mutant()
@@ -264,7 +285,8 @@ class Population():
 
     def best_mutant(self):
         pop = {k:m for k, m in self.pop.items() if m.score is not None}
-        ranked = sorted(self.pop.values(), key=lambda x:x.score, reverse=True) # TODO reverse=False
+        ms = [m for m in self.pop.values() if m.score is not None]
+        ranked = sorted(ms, key=lambda x:x.score, reverse=True) # TODO reverse=False
         # TODO not the best but random.choices 20% best
         return ranked[0]
 
@@ -276,12 +298,19 @@ class Population():
         return len(self.pop)
 
     def train_mutants(self):
+        #try:
         while True:
+            time.sleep(1)
+            Logger()('Number of living workers {} / {}'.format(
+                len([w for w in self.workers if w.is_alive()]),
+                len(self.workers)))
+
             mutant = self.get_mutant_to_train()
             if mutant is None:
                 break
 
             if mutant.status != 'evaluated':
+
                 mutant.train()
                 self.save()
 
@@ -299,6 +328,35 @@ class Population():
             mutant.status = 'killed'
             self.save()
             self.queue.task_done()
+        # except:
+        #     try:
+        #         Logger()(traceback.format_exc(), Logger.ERROR)
+        #     except:
+        #         pass
+        #     # if a thread crash, we create a new one
+        #     time.sleep(1) # wait for the thread to die
+        #     self.workers = [w for w in self.workers if w.is_alive()] # remove_dead_workers
+        #     self.create_workers()
+        #     self.add_mutant_to_train(mutant)
+        #     self.queue.task_done()
+
+    def create_workers(self):
+        n_workers = self.n_workers - len(self.workers)
+        Logger()('Create {} workers'.format(n_workers))
+        for i in range(n_workers):
+            t = threading.Thread(target=self.train_mutants, daemon=True)
+            t.start()
+            self.workers.append(t)
+            time.sleep(1)
+
+    def stop_workers(self):
+        # block main thread execution until all tasks are done
+        self.queue.join()
+        # kill the workers
+        for i in range(self.n_workers):
+            self.queue.put(None)
+        for t in self.workers:
+            t.join()
 
 
 def init_experiment_directory(exp_dir, resume=None):
@@ -340,25 +398,16 @@ def pbt(path_opts=None):
 
     pop = Population()
 
-    threads = []
-    for i in range(Options()['pbt']['n_workers']):
-        t = threading.Thread(target=pop.train_mutants)
-        t.start()
-        threads.append(t)
+    pop.create_workers()
+
+    time.sleep(5)
 
     if Options()['exp']['resume'] is None:
         pop.populate()
     else:
         pop.resume()
 
-    # block until all tasks are done
-    pop.queue.join()
-
-    # stop workers
-    for i in range(Options()['pbt']['n_workers']):
-        pop.queue.put(None)
-    for t in threads:
-        t.join()
+    pop.stop_workers()
 
 
 def main(path_opts=None):

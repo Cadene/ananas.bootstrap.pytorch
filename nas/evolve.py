@@ -6,15 +6,13 @@ from bootstrap.lib.options import Options
 from bootstrap.run import init_experiment_directory
 import random
 import functools
+import traceback
 
 
 def resume(path_opts=None, resume=None):
     # first call to Options() load the options yaml file from --path_opts command line argument if path_opts=None
     Options(path_opts)
     Options()['exp']['resume'] = resume
-
-    # make exp directory if --exp.resume is empty
-    init_experiment_directory(Options()['exp']['dir'], Options()['exp']['resume'])
 
     # initialiaze seeds to be able to reproduce experiment on reload
     utils.set_random_seed(Options()['misc']['seed'])
@@ -83,21 +81,36 @@ def rgetattr(obj, attr, *args):
     return functools.reduce(_getattr, [obj] + attr.split('.'))
 
 
+def rgetitem(obj, key, *args):
+    def _getitem(obj, key):
+        return obj[key]
+    return functools.reduce(_getitem, [obj] + key.split('.'))
+
+
+def rsetitem(obj, key, val):
+    keys = key.split('.')
+    for k in keys[:-1]:
+        obj = obj[k]
+    obj[keys[-1]] = val
+
+
 def apply_on_engine(mutation, engine):
     rgetattr(engine, mutation['key'])()
 
 
 def apply_on_options(mutation, options):
-    value = options[mutation['key']]
+    value = rgetitem(options, mutation['key'])
     if mutation['perturb_type'] == 'linear':
-        new_v = value * random.choices(mutation['perturb'])
+        new_v = value * random.choices(mutation['perturb'], k=1)[0]
     elif mutation['perturb_type'] == 'logscale':
         new_v = -np.log10(1 - value)
-        new_v = new_v * random.choices(mutation['perturb'])
+        new_v = new_v * random.choices(mutation['perturb'], k=1)[0]
         new_v = 1 - (1/(10 ** new_v))
     else:
         raise ValueError('Invalid perturb type found in config file.')
-    options[mutation['key']] = new_value
+    Logger().log_dict('mutation', mutation, should_print=True)
+    Logger()('Mutation value from {} to {}'.format(value, new_v))
+    rsetitem(options, mutation['key'], new_v)
 
 
 def evolve():
@@ -106,10 +119,12 @@ def evolve():
     parser.add_argument('--path_mutant_opts', type=str, required=True)
     args = parser.parse_args()
 
-    pbt_opts = Options.load_yaml_opts(args.path_pbt_opts)
+    exp_dir = os.path.dirname(args.path_mutant_opts)
+    Logger(exp_dir, name='logs_evolve')
 
-    elements = []
-    weights = []
+    pbt_opts = Options.load_yaml_opts(args.path_pbt_opts)
+    mutant_opts = Options.load_yaml_opts(args.path_mutant_opts)
+
     mutations = process_mutations(pbt_opts['pbt']['mutations'])
     keys = []
     weights = []
@@ -118,15 +133,11 @@ def evolve():
         weights.append(v['weight'])
 
     choices = random.choices(keys, weights, k=1)
-
-    mutant_opts = Options.load_yaml_opts(args.path_mutant_opts)
-
-    # WARNING: do not Logger()() anything before this step
-    if sum(['method' in mutations[key] for key in choices]) > 0:
-        engine = resume(args.path_mutant_opts, pbt_opts['pbt']['resume'])
-
     Logger()('mutation keys: {}'.format(keys))
     Logger()('mutation weights: {}'.format(weights))
+
+    if sum(['method' in mutations[key] for key in choices]) > 0:
+        engine = resume(args.path_mutant_opts, pbt_opts['pbt']['resume'])
 
     for key in choices:
         if mutations[key]['type'] == 'opt':
@@ -152,12 +163,10 @@ def main():
     except SystemExit:
         pass
     except:
-        # to be able to write the error trace to exp_dir/logs.txt
         try:
             Logger()(traceback.format_exc(), Logger.ERROR)
         except:
             pass
-
 
 if __name__ == '__main__':
     main()
