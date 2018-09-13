@@ -3,8 +3,8 @@ pbt:
   path_opts: nas/options/cifar10_mutant.yaml
   #mutation_rate: 20
   mutation_rate: 2
-  n_workers: 1
-  n_pop_max: 10000
+  n_workers: 10
+  n_pop_max: 100000
   cmd: 
     #train: ../autopilotcv-pytorch/slurm.py 1080ti 1 python -m bootstrap.run
     train: -m bootstrap.run
@@ -19,7 +19,7 @@ pbt:
         weight: 1.
         type: opt
         init: [0.001, 0.003, 0.0075, 0.01]
-        perturb: [2.0, 0.5]
+        perturb: [2.0, 1., 0.5]
         perturb_type: 'linear' # logscale | linear
     # optimizer:
     #   set_lr:

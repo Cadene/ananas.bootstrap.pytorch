@@ -13,7 +13,8 @@ class CIFAR(Dataset):
                  shuffle=False,
                  pin_memory=False,
                  nb_threads=4,
-                 name='CIFAR10'):
+                 name='CIFAR10',
+                 im_tf=None):
         super(CIFAR, self).__init__(
             dir_data,
             split,
@@ -23,19 +24,22 @@ class CIFAR(Dataset):
             nb_threads)
         self.name = name
 
-        self.mean = [0.49139968, 0.48215827, 0.44653124]
-        self.std = [0.24703233, 0.24348505, 0.26158768]
-        self.tf = {}
-        self.tf['train'] = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(self.mean, self.std)
-        ])
-        self.tf['val'] = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(self.mean, self.std)
-        ])
+        if im_tf is None:
+            mean = [0.49139968, 0.48215827, 0.44653124]
+            std = [0.24703233, 0.24348505, 0.26158768]
+            self.im_tf = {}
+            self.im_tf['train'] = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std)
+            ])
+            self.im_tf['val'] = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std)
+            ])
+        else:
+            self.im_tf = im_tf
 
         self.classes = ('plane', 'car', 'bird', 'cat', 'deer',
                         'dog', 'frog', 'horse', 'ship', 'truck')

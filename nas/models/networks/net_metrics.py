@@ -91,7 +91,10 @@ def measure_layer(layer, x):
     ### ops_linear
     elif type_name in ['Linear']:
         weight_ops = layer.weight.numel() * multi_add
-        bias_ops = layer.bias.numel()
+        if layer.bias is not None:
+            bias_ops = layer.bias.numel()
+        else:
+            bias_ops = 0
         delta_ops = x.size()[0] * (weight_ops + bias_ops)
         delta_params = get_layer_param(layer)
 
@@ -107,7 +110,7 @@ def measure_layer(layer, x):
     count_ops += delta_ops
     count_params += delta_params
     
-def net_metrics(model, data=None, shape=None):
+def net_metrics(model, data=None, shape=None, nf=10):
     global count_ops, count_params
     count_ops = 0
     count_params = 0
@@ -145,7 +148,6 @@ def net_metrics(model, data=None, shape=None):
     restore_forward(model)
     
     # measure empirical forward time
-    nf = 10
     torch.cuda.synchronize()
     t0 = time.time()
     for k in range(nf):

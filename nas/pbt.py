@@ -319,6 +319,10 @@ class Population():
                 mutant.eval()
                 self.save()
 
+            # TODO??
+            # if good enough keep training:
+            # self.add_mutant_to_train(mutant)
+
             if len(self.evaluated_mutants()) > self.n_pop_max:
                 self.queue.task_done()
                 break
